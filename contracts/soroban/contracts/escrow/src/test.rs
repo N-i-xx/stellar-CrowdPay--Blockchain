@@ -206,13 +206,17 @@ fn test_execute_withdrawal_exceeding_approved_fails() {
 #[test]
 fn test_approve_withdrawal_auth() {
     let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(100);
     let admin = Address::generate(&env);
     let token_admin = Address::generate(&env);
-    let (token_client, _) = create_token_contract(&env, &token_admin);
+    let (token_client, stellar_client) = create_token_contract(&env, &token_admin);
+    let contributor = Address::generate(&env);
+    stellar_client.mint(&contributor, &1000);
 
     let client = setup_escrow(&env, &admin, 1000, 500, &token_client.address);
+    client.deposit(&contributor, &1000);
 
-    env.mock_all_auths();
     client.approve_withdrawal(&500);
     assert_eq!(env.auths().len(), 1);
     assert_eq!(env.auths()[0].0, admin);
@@ -376,3 +380,45 @@ fn test_failed_campaign_withdrawal_blocked() {
     client.withdraw(&admin, &300);
 }
 
+
+#[test]
+#[should_panic(expected = "Campaign has not succeeded")]
+fn test_approve_withdrawal_after_failed_campaign_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(100);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let (token_client, stellar_client) = create_token_contract(&env, &token_admin);
+    let contributor = Address::generate(&env);
+    stellar_client.mint(&contributor, &500);
+
+    let client = setup_escrow(&env, &admin, 1000, 500, &token_client.address);
+    client.deposit(&contributor, &500);
+
+    // Deadline passes without reaching the target: funds must stay refundable.
+    env.ledger().set_timestamp(600);
+    client.approve_withdrawal(&500);
+}
+
+#[test]
+#[should_panic(expected = "Insufficient approved amount")]
+fn test_approve_then_revoke_blocks_execution() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(100);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let (token_client, stellar_client) = create_token_contract(&env, &token_admin);
+    let contributor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    stellar_client.mint(&contributor, &1000);
+
+    let client = setup_escrow(&env, &admin, 1000, 500, &token_client.address);
+    client.deposit(&contributor, &1000);
+    client.approve_withdrawal(&400);
+    client.revoke_withdrawal(&400);
+    client.execute_withdrawal(&recipient, &400);
+}
