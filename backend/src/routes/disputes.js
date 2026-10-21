@@ -1,6 +1,11 @@
 const router = require('express').Router();
 const db = require('../config/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const {
+  disputeCreateValidation,
+  disputeUpdateValidation,
+  validateRequestUnprocessable,
+} = require('../middleware/requestSchemas');
 const { sendEmailSafe } = require('../services/emailService');
 const logger = require('../config/logger');
 
@@ -68,16 +73,15 @@ async function logDisputeEvent(client, { disputeId, actorId, action, note }) {
  *         description: Invalid reason or missing description
  */
 // POST /campaigns/:id/disputes — contributor raises a dispute
-router.post('/campaigns/:id/disputes', requireAuth, async (req, res) => {
+router.post(
+  '/campaigns/:id/disputes',
+  requireAuth,
+  disputeCreateValidation,
+  validateRequestUnprocessable,
+  async (req, res) => {
+  // reason, description (HTML-stripped, trimmed) and evidence_url are
+  // validated by disputeCreateValidation.
   const { reason, description, evidence_url } = req.body;
-
-  const VALID_REASONS = ['non_delivery', 'misrepresentation', 'abandoned', 'other'];
-  if (!VALID_REASONS.includes(reason)) {
-    return res.status(422).json({ error: `reason must be one of: ${VALID_REASONS.join(', ')}` });
-  }
-  if (!description || !description.trim()) {
-    return res.status(422).json({ error: 'description is required' });
-  }
 
   const { rows: campaigns } = await db.query(
     'SELECT id, creator_id, title FROM campaigns WHERE id = $1',
@@ -255,13 +259,14 @@ router.get('/campaigns/:id/disputes', requireAuth, requireRole('admin'), async (
  *         description: Invalid status
  */
 // PATCH /disputes/:id — admin updates status + resolution note
-router.patch('/disputes/:id', requireAuth, requireRole('admin'), async (req, res) => {
+router.patch(
+  '/disputes/:id',
+  requireAuth,
+  requireRole('admin'),
+  disputeUpdateValidation,
+  validateRequestUnprocessable,
+  async (req, res) => {
   const { status, resolution_note } = req.body;
-
-  const VALID_STATUSES = ['open', 'under_review', 'resolved_creator', 'resolved_contributor', 'closed'];
-  if (!VALID_STATUSES.includes(status)) {
-    return res.status(422).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
-  }
 
   const { rows: disputes } = await db.query(
     'SELECT * FROM disputes WHERE id = $1',

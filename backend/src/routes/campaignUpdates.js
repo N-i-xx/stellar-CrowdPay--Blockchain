@@ -3,9 +3,19 @@ const sanitizeHtml = require("sanitize-html");
 const db = require("../config/database");
 const { requireAuth } = require("../middleware/auth");
 const asyncHandler = require("../utils/asyncHandler");
+const {
+  campaignUpdateCreateValidation,
+  campaignUpdateEditValidation,
+  campaignUpdateDeleteValidation,
+  validateRequestUnprocessable,
+} = require("../middleware/requestSchemas");
 
 const MAX_BODY_LENGTH = 20000;
 const MAX_TITLE_LENGTH = 200;
+
+// Per-route JSON limit: a 20,000-character body can be up to ~80 KB as UTF-8.
+// (Was referenced but never defined, so this module failed to load.)
+const updateBodyParser = require("express").json({ limit: "100kb" });
 
 const SANITIZE_OPTIONS = {
   allowedTags: [
@@ -117,6 +127,8 @@ router.post(
   "/:id/updates",
   requireAuth,
   updateBodyParser,
+  campaignUpdateCreateValidation,
+  validateRequestUnprocessable,
   requireCampaignCreator,
   asyncHandler(async (req, res) => {
     const rawTitle = String(req.body.title ?? "");
@@ -155,6 +167,8 @@ router.patch(
   "/:id/updates/:updateId",
   requireAuth,
   updateBodyParser,
+  campaignUpdateEditValidation,
+  validateRequestUnprocessable,
   requireCampaignCreator,
   asyncHandler(async (req, res) => {
     const rawTitle = String(req.body.title ?? "");
@@ -204,6 +218,8 @@ router.patch(
 router.delete(
   "/:id/updates/:updateId",
   requireAuth,
+  campaignUpdateDeleteValidation,
+  validateRequestUnprocessable,
   requireCampaignCreator,
   asyncHandler(async (req, res) => {
     const { rowCount } = await db.query(
