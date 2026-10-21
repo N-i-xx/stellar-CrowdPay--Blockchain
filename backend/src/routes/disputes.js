@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const db = require('../config/database');
+const { NOT_DELETED, notDeleted, findVisibleCampaign } = require('../utils/campaignVisibility');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   disputeCreateValidation,
@@ -84,7 +85,7 @@ router.post(
   const { reason, description, evidence_url } = req.body;
 
   const { rows: campaigns } = await db.query(
-    'SELECT id, creator_id, title FROM campaigns WHERE id = $1',
+    `SELECT id, creator_id, title FROM campaigns WHERE id = $1 AND ${NOT_DELETED}`,
     [req.params.id]
   );
   if (!campaigns.length) return res.status(404).json({ error: 'Campaign not found' });
@@ -196,6 +197,9 @@ router.post(
  */
 // GET /campaigns/:id/disputes — admin only
 router.get('/campaigns/:id/disputes', requireAuth, requireRole('admin'), async (req, res) => {
+  if (!(await findVisibleCampaign(db, req.params.id))) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
   const { rows } = await db.query(
     `SELECT d.*, u.name AS raised_by_name, u.email AS raised_by_email
      FROM disputes d
@@ -269,7 +273,9 @@ router.patch(
   const { status, resolution_note } = req.body;
 
   const { rows: disputes } = await db.query(
-    'SELECT * FROM disputes WHERE id = $1',
+    `SELECT d.* FROM disputes d
+       JOIN campaigns c ON c.id = d.campaign_id
+      WHERE d.id = $1 AND ${notDeleted('c')}`,
     [req.params.id]
   );
   if (!disputes.length) return res.status(404).json({ error: 'Dispute not found' });
@@ -417,8 +423,10 @@ router.get('/disputes/:id/events', requireAuth, requireRole('admin'), async (req
   const { rows } = await db.query(
     `SELECT de.*, u.name AS actor_name
      FROM dispute_events de
+     JOIN disputes d ON d.id = de.dispute_id
+     JOIN campaigns c ON c.id = d.campaign_id
      LEFT JOIN users u ON u.id = de.actor_id
-     WHERE de.dispute_id = $1
+     WHERE de.dispute_id = $1 AND ${notDeleted('c')}
      ORDER BY de.created_at ASC`,
     [req.params.id]
   );
