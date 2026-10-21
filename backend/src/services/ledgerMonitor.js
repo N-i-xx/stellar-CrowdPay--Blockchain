@@ -9,7 +9,6 @@
 const { server } = require("../config/stellar");
 const db = require("../config/database");
 const logger = require("../config/logger");
-const { getCampaignBalance } = require("./stellarService");
 const { markContributionIndexed } = require("./stellarTransactionService");
 const { sendContributionReceipt } = require("./emailService");
 const {
@@ -634,42 +633,13 @@ async function handlePayment(campaignId, walletPublicKey, payment) {
     await openStreamForWallet(campaignId, walletPublicKey);
   }
 
-  const RECONCILE_INTERVAL_MS = 10 * 60 * 1000;
-
   /**
-   * Compare each campaign's DB raised_amount against live Horizon balance.
+   * Balance reconciliation lives in services/reconciliation (incremental,
+   * batched, overlap-guarded) and is scheduled once from src/index.js. This
+   * module used to run a second, full-table scan every 10 minutes.
    */
-  async function reconcileCampaignBalances() {
-    const { rows } = await db.query(
-      `SELECT id, wallet_public_key, raised_amount, asset_type, status
-     FROM campaigns
-     WHERE status IN ('active', 'funded')`,
-    );
-
-    for (const campaign of rows) {
-      try {
-        const balances = await getCampaignBalance(campaign.wallet_public_key);
-        const onChain = parseFloat(balances[campaign.asset_type] || "0");
-        const inDb = parseFloat(campaign.raised_amount);
-        const delta = Math.abs(onChain - inDb);
-        if (delta > 0.0000001) {
-          logger.warn("Campaign raised_amount differs from Horizon balance", {
-            campaign_id: campaign.id,
-            wallet_public_key: campaign.wallet_public_key,
-            raised_amount_db: inDb,
-            balance_horizon: onChain,
-            asset_type: campaign.asset_type,
-            delta,
-          });
-        }
-      } catch (err) {
-        logger.error("Balance reconciliation failed for campaign", {
-          campaign_id: campaign.id,
-          wallet_public_key: campaign.wallet_public_key,
-          error: err.message,
-        });
-      }
-    }
+  function reconcileCampaignBalances() {
+    return require("./reconciliation").runReconciliation();
   }
 
   async function startLedgerMonitor() {
@@ -693,16 +663,6 @@ async function handlePayment(campaignId, walletPublicKey, payment) {
     logger.info("Watching active and funded campaigns", {
       campaign_count: rows.length,
     });
-
-    setInterval(() => {
-      runWithCapturedContext(() =>
-        reconcileCampaignBalances().catch((err) =>
-          logger.error("Periodic balance reconciliation failed", {
-            error: err.message,
-          }),
-        ),
-      );
-    }, RECONCILE_INTERVAL_MS);
 
     setInterval(
       () => {
