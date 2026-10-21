@@ -60,6 +60,34 @@ function broadcastCampaignUpdate(campaignId, data) {
 
 const MAX_RECONNECT_DELAY_MS = 60_000;
 
+function positiveInt(raw, fallback) {
+  const value = parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Startup and stream limits, read per call so operators/tests can tune them.
+ * Horizon rate-limits per IP; opening hundreds of streams at once caused
+ * dropped connections and long cursor loss after restarts.
+ */
+function getWatchConfig() {
+  return {
+    // Wallets whose replay+stream setup may be in flight at once.
+    concurrency: positiveInt(process.env.LEDGER_WATCH_CONCURRENCY, 5),
+    // Pause between starting consecutive wallet watches.
+    staggerMs: positiveInt(process.env.LEDGER_WATCH_STAGGER_MS, 200),
+    // Hard cap on open SSE streams; further wallets are polled instead.
+    maxStreams: positiveInt(process.env.LEDGER_MAX_STREAMS, 200),
+    // How often polled (over-cap) wallets are caught up via REST.
+    pollIntervalMs: positiveInt(process.env.LEDGER_POLL_INTERVAL_MS, 60_000),
+    // Polled wallets caught up per tick (round-robin).
+    pollBatchSize: positiveInt(process.env.LEDGER_POLL_BATCH_SIZE, 20),
+  };
+}
+
+/** wallet_public_key -> campaign_id for wallets polled instead of streamed. */
+const polledWallets = new Map();
+
 /** Backoff between in-place indexing retries for a single payment. */
 const INDEX_RETRY_DELAYS_MS = [500, 2000, 8000];
 /** Delay before re-replaying from the stored cursor after a payment failed to index. */
@@ -608,10 +636,100 @@ async function handlePayment(campaignId, walletPublicKey, payment) {
     });
   }
 
+  function openStreamCount() {
+    let count = 0;
+    for (const entry of streamRegistry.values()) {
+      if (typeof entry.close === "function") count += 1;
+    }
+    return count;
+  }
+
   /**
-   * REST-replay from DB cursor, then open SSE stream (with auto-reconnect on errors).
+   * Polled wallets have no stream to start them at "now", so make sure they
+   * have a stored cursor before their first catch-up: the newest payment, or
+   * "0" for an account with none (nothing to replay).
+   */
+  async function ensurePollCursor(campaignId, walletPublicKey) {
+    if (await loadCursor(campaignId)) return;
+    const page = await server
+      .payments()
+      .forAccount(walletPublicKey)
+      .order("desc")
+      .limit(1)
+      .call();
+    const newest = (page.records || [])[0];
+    await saveCursor(campaignId, walletPublicKey, newest ? extractPagingToken(newest) : "0");
+  }
+
+  /** Track a wallet for REST polling because the stream cap is reached. */
+  async function pollCampaignWallet(campaignId, walletPublicKey) {
+    await ensurePollCursor(campaignId, walletPublicKey);
+    polledWallets.set(walletPublicKey, campaignId);
+    registrySet(walletPublicKey, {
+      campaign_id: campaignId,
+      state: "polling",
+      opened_at: new Date().toISOString(),
+      last_error: null,
+    });
+  }
+
+  let pollCursorIndex = 0;
+  let pollInProgress = false;
+
+  /** Catch up the next batch of polled wallets (round-robin, no overlap). */
+  async function pollWalletsOnce({ pollBatchSize } = getWatchConfig()) {
+    if (pollInProgress || polledWallets.size === 0) return 0;
+    pollInProgress = true;
+    try {
+      const entries = [...polledWallets.entries()];
+      const batch = [];
+      for (let i = 0; i < Math.min(pollBatchSize, entries.length); i += 1) {
+        batch.push(entries[(pollCursorIndex + i) % entries.length]);
+      }
+      pollCursorIndex = (pollCursorIndex + batch.length) % entries.length;
+      for (const [walletPublicKey, campaignId] of batch) {
+        try {
+          await replayMissedPayments(campaignId, walletPublicKey);
+          registrySet(walletPublicKey, { state: "polling", last_message_at: new Date().toISOString() });
+        } catch (err) {
+          registrySet(walletPublicKey, { state: "polling", last_error: err.message });
+          logger.error("Ledger poll failed", {
+            wallet_public_key: walletPublicKey,
+            campaign_id: campaignId,
+            error: err.message,
+          });
+        }
+      }
+      return batch.length;
+    } finally {
+      pollInProgress = false;
+    }
+  }
+
+  /**
+   * Runs worker(item) for every item with at most `concurrency` in flight,
+   * waiting `staggerMs` between starts. Never rejects; failures are logged.
+   */
+  async function runStaggered(items, worker, { concurrency, staggerMs }) {
+    let next = 0;
+    const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (next < items.length) {
+        const item = items[next];
+        next += 1;
+        await worker(item);
+        if (next < items.length) await sleep(staggerMs);
+      }
+    });
+    await Promise.all(runners);
+  }
+
+  /**
+   * REST-replay from DB cursor, then open SSE stream (with auto-reconnect on
+   * errors). Once LEDGER_MAX_STREAMS streams are open, further wallets are
+   * caught up by REST polling instead.
    */
   async function watchCampaignWallet(campaignId, walletPublicKey) {
+    if (polledWallets.has(walletPublicKey)) return;
     const existing = streamRegistry.get(walletPublicKey);
     if (
       existing &&
@@ -630,6 +748,15 @@ async function handlePayment(campaignId, walletPublicKey, payment) {
     }
 
     await replayMissedPayments(campaignId, walletPublicKey);
+    if (openStreamCount() >= getWatchConfig().maxStreams) {
+      logger.warn("Ledger stream cap reached; polling wallet instead", {
+        wallet_public_key: walletPublicKey,
+        campaign_id: campaignId,
+        max_streams: getWatchConfig().maxStreams,
+      });
+      await pollCampaignWallet(campaignId, walletPublicKey);
+      return;
+    }
     await openStreamForWallet(campaignId, walletPublicKey);
   }
 
@@ -647,24 +774,40 @@ async function handlePayment(campaignId, walletPublicKey, payment) {
       `SELECT id, wallet_public_key FROM campaigns WHERE status IN ('active', 'funded')`,
     );
 
-    await Promise.all(
-      rows.map((campaign) =>
-        watchCampaignWallet(campaign.id, campaign.wallet_public_key).catch(
-          (err) =>
-            logger.error("Failed to watch campaign wallet", {
-              wallet_public_key: campaign.wallet_public_key,
-              campaign_id: campaign.id,
-              error: err.message,
-            }),
+    const config = getWatchConfig();
+
+    // Poll over-cap wallets on a fixed interval (no overlap between ticks).
+    const pollTimer = setInterval(() => {
+      runWithCapturedContext(() =>
+        pollWalletsOnce(config).catch((err) =>
+          logger.error("Ledger poll tick failed", { error: err.message }),
         ),
-      ),
+      );
+    }, config.pollIntervalMs);
+    if (typeof pollTimer.unref === "function") pollTimer.unref();
+
+    // Stagger startup instead of opening every wallet's replay + stream at
+    // once: at most `concurrency` in flight, `staggerMs` apart.
+    await runStaggered(
+      rows,
+      (campaign) =>
+        watchCampaignWallet(campaign.id, campaign.wallet_public_key).catch((err) =>
+          logger.error("Failed to watch campaign wallet", {
+            wallet_public_key: campaign.wallet_public_key,
+            campaign_id: campaign.id,
+            error: err.message,
+          }),
+        ),
+      config,
     );
 
     logger.info("Watching active and funded campaigns", {
       campaign_count: rows.length,
+      streams_open: openStreamCount(),
+      wallets_polled: polledWallets.size,
     });
 
-    setInterval(
+    const healthTimer = setInterval(
       () => {
         runWithCapturedContext(() =>
           getLedgerStreamHealth()
@@ -681,6 +824,7 @@ async function handlePayment(campaignId, walletPublicKey, payment) {
       },
       5 * 60 * 1000,
     );
+    if (typeof healthTimer.unref === "function") healthTimer.unref();
   }
 
   /** For GET /health/ledger — in-process stream status + DB cursors. */
@@ -726,6 +870,8 @@ async function handlePayment(campaignId, walletPublicKey, payment) {
 
     return {
       active_campaigns: streamsWithStale.length,
+      streams_open: openStreamCount(),
+      wallets_polled: polledWallets.size,
       streams: streamsWithStale,
     };
   }
@@ -733,6 +879,8 @@ async function handlePayment(campaignId, walletPublicKey, payment) {
   module.exports = {
     startLedgerMonitor,
     watchCampaignWallet,
+    pollWalletsOnce,
+    getWatchConfig,
     handlePayment,
     onPaymentRecord,
     reconcileCampaignBalances,
