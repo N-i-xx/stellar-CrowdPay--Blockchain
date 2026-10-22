@@ -2510,9 +2510,11 @@ function progressColor(pct, status) {
 
 function ContributionRow({ c }) {
   const [copied, setCopied] = useState(false);
+  const senderKey = c.sender_public_key || "";
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(c.sender_public_key);
+    if (!senderKey) return;
+    navigator.clipboard.writeText(senderKey);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -2533,22 +2535,26 @@ function ContributionRow({ c }) {
         <div style={{ minWidth: 0 }}>
           <div style={styles.sender}>{c.display_name || "Anonymous"}</div>
           <div style={styles.convHint}>
-            <button
-              type="button"
-              onClick={handleCopy}
-              title="Copy full public key"
-              style={{
-                background: "none",
-                border: "none",
-                color: "inherit",
-                fontFamily: "monospace",
-                fontSize: "inherit",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              {c.sender_public_key.slice(0, 4)}…{c.sender_public_key.slice(-4)}
-            </button>
+            {senderKey ? (
+              <button
+                type="button"
+                onClick={handleCopy}
+                title="Copy full public key"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "inherit",
+                  fontFamily: "monospace",
+                  fontSize: "inherit",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                {senderKey.slice(0, 4)}…{senderKey.slice(-4)}
+              </button>
+            ) : (
+              <span>Anonymous</span>
+            )}
             {" • "}
             <RelativeTime date={c.created_at} />
           </div>
@@ -2590,6 +2596,9 @@ function isCampaignOwner(user, campaign) {
 export default function Campaign() {
   const contributeBtnRef = useRef(null);
   const showAllRef = useRef(false);
+  const editModalRef = useRef(null);
+  const deleteModalRef = useRef(null);
+  const editCloseHandlerRef = useRef(() => {});
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -2655,6 +2664,104 @@ export default function Campaign() {
       delete document.body.dataset.printDate;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isEditingCampaign) return undefined;
+    const prevActive = document.activeElement;
+    const modal = editModalRef.current;
+    if (!modal) return undefined;
+
+    const getFocusable = () =>
+      Array.from(
+        modal.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.disabled);
+
+    getFocusable()[0]?.focus();
+
+    function onKey(e) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        editCloseHandlerRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = getFocusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        modal.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !modal.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !modal.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    modal.addEventListener("keydown", onKey);
+    return () => {
+      modal.removeEventListener("keydown", onKey);
+      prevActive?.focus?.();
+    };
+  }, [isEditingCampaign]);
+
+  useEffect(() => {
+    if (!showDeleteDialog) return undefined;
+    const prevActive = document.activeElement;
+    const modal = deleteModalRef.current;
+    if (!modal) return undefined;
+
+    const getFocusable = () =>
+      Array.from(
+        modal.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.disabled);
+
+    getFocusable()[0]?.focus();
+
+    function onKey(e) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        closeDeleteDialog();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = getFocusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        modal.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !modal.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !modal.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    modal.addEventListener("keydown", onKey);
+    return () => {
+      modal.removeEventListener("keydown", onKey);
+      prevActive?.focus?.();
+    };
+  }, [showDeleteDialog]);
 
   useEffect(() => {
     setLoadError("");
@@ -2956,6 +3063,35 @@ export default function Campaign() {
     setEditFormData({ title: "", description: "", deadline: "" });
     setEditError("");
     setEditSuccess("");
+  }
+
+  function editFormIsDirty() {
+    if (!campaign) return false;
+    return (
+      editFormData.title !== (campaign.title || "") ||
+      editFormData.description !== (campaign.description || "") ||
+      editFormData.deadline !==
+        (campaign.deadline ? campaign.deadline.split("T")[0] : "")
+    );
+  }
+
+  function handleRequestCloseEditModal() {
+    if (editLoading) return;
+    if (
+      editFormIsDirty() &&
+      !window.confirm("You have unsaved changes. Discard them?")
+    ) {
+      return;
+    }
+    handleCloseEditModal();
+  }
+
+  editCloseHandlerRef.current = handleRequestCloseEditModal;
+
+  function closeDeleteDialog() {
+    setShowDeleteDialog(false);
+    setDeleteConfirmation("");
+    setDeleteError("");
   }
 
   async function handleSaveEdit() {
@@ -4131,7 +4267,7 @@ export default function Campaign() {
                 <strong style={{ display: "block", marginBottom: "1rem" }}>
                   Asset Breakdown
                 </strong>
-                {analytics.assetBreakdown.map((asset) => (
+                {(analytics.assetBreakdown || []).map((asset) => (
                   <div
                     key={asset.paid_with}
                     style={{
@@ -4150,7 +4286,7 @@ export default function Campaign() {
                 <strong style={{ display: "block", marginBottom: "1rem" }}>
                   Top Contributors
                 </strong>
-                {analytics.topContributors.map((c, i) => (
+                {(analytics.topContributors || []).map((c, i) => (
                   <div
                     key={i}
                     style={{
@@ -4161,8 +4297,9 @@ export default function Campaign() {
                     }}
                   >
                     <span>
-                      {c.sender_public_key.slice(0, 4)}...
-                      {c.sender_public_key.slice(-4)}
+                      {c.sender_public_key
+                        ? `${c.sender_public_key.slice(0, 4)}...${c.sender_public_key.slice(-4)}`
+                        : "Anonymous"}
                     </span>
                     <span>
                       {c.total} ({c.times} contributions)
@@ -4267,9 +4404,14 @@ export default function Campaign() {
             justifyContent: "center",
             zIndex: 1000,
           }}
-          onClick={handleCloseEditModal}
+          onClick={handleRequestCloseEditModal}
         >
           <div
+            ref={editModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-campaign-modal-title"
+            tabIndex={-1}
             style={{
               background: "var(--color-surface)",
               color: "var(--color-text-primary)",
@@ -4285,6 +4427,7 @@ export default function Campaign() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2
+              id="edit-campaign-modal-title"
               style={{
                 marginTop: 0,
                 marginBottom: "1.5rem",
@@ -4297,6 +4440,7 @@ export default function Campaign() {
 
             {editError && (
               <p
+                role="alert"
                 style={{
                   color: "var(--color-danger-text, #ef4444)",
                   marginBottom: "1rem",
@@ -4311,6 +4455,7 @@ export default function Campaign() {
 
             <div style={{ marginBottom: "1.5rem" }}>
               <label
+                htmlFor="edit-campaign-title"
                 style={{
                   display: "block",
                   fontWeight: 600,
@@ -4321,6 +4466,7 @@ export default function Campaign() {
                 Title
               </label>
               <input
+                id="edit-campaign-title"
                 type="text"
                 value={editFormData.title}
                 onChange={(e) =>
@@ -4351,6 +4497,7 @@ export default function Campaign() {
 
             <div style={{ marginBottom: "1.5rem" }}>
               <label
+                htmlFor="edit-campaign-description"
                 style={{
                   display: "block",
                   fontWeight: 600,
@@ -4361,6 +4508,7 @@ export default function Campaign() {
                 Description
               </label>
               <textarea
+                id="edit-campaign-description"
                 value={editFormData.description}
                 onChange={(e) =>
                   setEditFormData({
@@ -4395,6 +4543,7 @@ export default function Campaign() {
 
             <div style={{ marginBottom: "1.5rem" }}>
               <label
+                htmlFor="edit-campaign-deadline"
                 style={{
                   display: "block",
                   fontWeight: 600,
@@ -4405,6 +4554,7 @@ export default function Campaign() {
                 Deadline (optional)
               </label>
               <input
+                id="edit-campaign-deadline"
                 type="date"
                 value={editFormData.deadline}
                 onChange={(e) =>
@@ -4433,7 +4583,7 @@ export default function Campaign() {
               <button
                 type="button"
                 className="btn-secondary"
-                onClick={handleCloseEditModal}
+                onClick={handleRequestCloseEditModal}
                 disabled={editLoading}
                 style={{ opacity: editLoading ? 0.6 : 1 }}
               >
@@ -4470,6 +4620,11 @@ export default function Campaign() {
           }}
         >
           <div
+            ref={deleteModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-campaign-modal-title"
+            tabIndex={-1}
             style={{
               background: "var(--color-surface)",
               borderRadius: "8px",
@@ -4480,6 +4635,7 @@ export default function Campaign() {
             }}
           >
             <h2
+              id="delete-campaign-modal-title"
               style={{
                 fontSize: "1.5rem",
                 fontWeight: 700,
@@ -4504,6 +4660,7 @@ export default function Campaign() {
             </p>
             <div style={{ marginBottom: "1.5rem" }}>
               <label
+                htmlFor="delete-campaign-confirm"
                 style={{
                   display: "block",
                   fontWeight: 600,
@@ -4515,6 +4672,7 @@ export default function Campaign() {
                 Type the campaign title to confirm:
               </label>
               <input
+                id="delete-campaign-confirm"
                 type="text"
                 value={deleteConfirmation}
                 onChange={(e) => setDeleteConfirmation(e.target.value)}
@@ -4531,6 +4689,7 @@ export default function Campaign() {
             </div>
             {deleteError && (
               <p
+                role="alert"
                 className="alert alert--error"
                 style={{ marginBottom: "1.5rem" }}
               >
@@ -4547,11 +4706,7 @@ export default function Campaign() {
               <button
                 type="button"
                 className="btn-secondary"
-                onClick={() => {
-                  setShowDeleteDialog(false);
-                  setDeleteConfirmation("");
-                  setDeleteError("");
-                }}
+                onClick={closeDeleteDialog}
                 disabled={deleteLoading}
                 style={{ opacity: deleteLoading ? 0.6 : 1 }}
               >
