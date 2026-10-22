@@ -204,14 +204,16 @@ impl EscrowContract {
             panic!("No contribution to refund");
         }
 
+        // Checks-effects-interactions: clear the contributor's balance and
+        // reduce the total before handing control to the token contract.
+        let new_total = total_raised.saturating_sub(amount);
+        env.storage().instance().set(&DataKey::TotalRaised, &new_total);
+        env.storage().persistent().set(&balance_key, &0i128);
+
         let asset: Address = env.storage().instance().get(&DataKey::Asset).unwrap();
         let client = token::Client::new(&env, &asset);
         client.transfer(&env.current_contract_address(), &contributor, &amount);
 
-        let new_total = total_raised.saturating_sub(amount);
-        env.storage().instance().set(&DataKey::TotalRaised, &new_total);
-
-        env.storage().persistent().set(&balance_key, &0i128);
         env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
         env.events().publish(
