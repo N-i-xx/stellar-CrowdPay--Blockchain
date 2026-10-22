@@ -3686,6 +3686,7 @@ export default function Campaign() {
             window.open(
               `https://twitter.com/intent/tweet?text=${text}`,
               "_blank",
+              "noopener,noreferrer",
             );
           }}
         >
@@ -3706,7 +3707,7 @@ export default function Campaign() {
             const text = encodeURIComponent(
               `I just backed ${campaign.title} on CrowdPay — ${pct}% funded with ${campaign.contributor_count || 0} backers. Join me: ${window.location.href}`,
             );
-            window.open(`https://wa.me/?text=${text}`, "_blank");
+            window.open(`https://wa.me/?text=${text}`, "_blank", "noopener,noreferrer");
           }}
         >
           WhatsApp
