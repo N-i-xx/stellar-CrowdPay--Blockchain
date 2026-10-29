@@ -1,3 +1,4 @@
+const { sendErrorResponse } = require('./errorHandler');
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
@@ -27,7 +28,7 @@ function originCheck(req, res, next) {
   const fetchSite = req.get('sec-fetch-site');
   if (fetchSite) {
     if (fetchSite === 'cross-site') {
-      return res.status(403).json({ error: 'Cross-site request blocked' });
+      return sendErrorResponse(res, 403, 'Cross-site request blocked');
     }
     return next();
   }
@@ -39,13 +40,13 @@ function originCheck(req, res, next) {
   try {
     originHost = new URL(origin).host;
   } catch {
-    return res.status(403).json({ error: 'Cross-site request blocked' });
+    return sendErrorResponse(res, 403, 'Cross-site request blocked');
   }
 
   const allowedOrigins = getAllowedOrigins();
   if (allowedOrigins.has(origin) || originHost === req.get('host')) return next();
 
-  return res.status(403).json({ error: 'Cross-site request blocked' });
+  return sendErrorResponse(res, 403, 'Cross-site request blocked');
 }
 
 module.exports = { originCheck, getAllowedOrigins };
