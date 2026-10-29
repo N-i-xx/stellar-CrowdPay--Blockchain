@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const db = require('../config/database');
 const { NOT_DELETED, notDeleted, findVisibleCampaign } = require('../utils/campaignVisibility');
 const { requireAuth, requireRole } = require('../middleware/auth');
@@ -9,6 +10,38 @@ const {
 } = require('../middleware/requestSchemas');
 const { sendEmailSafe } = require('../services/emailService');
 const logger = require('../config/logger');
+const { sendErrorResponse } = require('../middleware/errorHandler');
+
+/**
+ * Per-user cap on raising disputes (the global limiter allows ~100 requests
+ * per 15 min, enough for one user to flood the moderation queue).
+ * Defaults to 5 per hour; DISPUTE_CREATE_LIMIT_PER_HOUR overrides it.
+ */
+function createDisputeCreateLimiter({
+  max = parseInt(process.env.DISPUTE_CREATE_LIMIT_PER_HOUR, 10) || 5,
+  windowMs = 60 * 60 * 1000,
+  skip = () => process.env.NODE_ENV === 'test',
+} = {}) {
+  return rateLimit({
+    windowMs,
+    max,
+    // Runs after requireAuth, so every request has a user id.
+    keyGenerator: (req) => `dispute-create:${req.user.userId}`,
+    validate: { keyGeneratorIpFallback: false },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip,
+    handler: (req, res, _next, options) =>
+      res.status(options.statusCode).json({
+        error: `Too many disputes raised; you can raise at most ${max} per hour.`,
+        code: 'TOO_MANY_REQUESTS',
+      }),
+  });
+}
+
+const disputeCreateLimiter = createDisputeCreateLimiter();
+
+const OPEN_DISPUTE_CONFLICT = 'You already have an open dispute for this campaign';
 
 async function logDisputeEvent(client, { disputeId, actorId, action, note }) {
   await client.query(
@@ -77,6 +110,7 @@ async function logDisputeEvent(client, { disputeId, actorId, action, note }) {
 router.post(
   '/campaigns/:id/disputes',
   requireAuth,
+  disputeCreateLimiter,
   disputeCreateValidation,
   validateRequestUnprocessable,
   async (req, res) => {
@@ -88,7 +122,7 @@ router.post(
     `SELECT id, creator_id, title FROM campaigns WHERE id = $1 AND ${NOT_DELETED}`,
     [req.params.id]
   );
-  if (!campaigns.length) return res.status(404).json({ error: 'Campaign not found' });
+  if (!campaigns.length) return sendErrorResponse(res, 404, 'Campaign not found');
   const campaign = campaigns[0];
 
   // Must have contributed
@@ -100,19 +134,41 @@ router.post(
     [campaign.id, req.user.userId]
   );
   if (!contributions.length) {
-    return res.status(403).json({ error: 'Only contributors who have backed this campaign can raise a dispute' });
+    return sendErrorResponse(res, 403, 'Only contributors who have backed this campaign can raise a dispute');
+  }
+
+  // One open/under_review dispute per contributor per campaign (also enforced
+  // by the disputes_one_open_per_contributor index for concurrent requests).
+  const { rows: openRows } = await db.query(
+    `SELECT id FROM disputes
+     WHERE campaign_id = $1 AND raised_by = $2 AND status IN ('open', 'under_review')
+     LIMIT 1`,
+    [campaign.id, req.user.userId]
+  );
+  if (openRows.length) {
+    return res.status(409).json({ error: OPEN_DISPUTE_CONFLICT, dispute_id: openRows[0].id });
   }
 
   const client = await db.connect();
   try {
     await client.query('BEGIN');
 
-    const { rows } = await client.query(
-      `INSERT INTO disputes (campaign_id, raised_by, reason, description, evidence_url)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [campaign.id, req.user.userId, reason, description.trim(), evidence_url || null]
-    );
+    let rows;
+    try {
+      ({ rows } = await client.query(
+        `INSERT INTO disputes (campaign_id, raised_by, reason, description, evidence_url)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING *`,
+        [campaign.id, req.user.userId, reason, description.trim(), evidence_url || null]
+      ));
+    } catch (err) {
+      if (err.code === '23505') {
+        // Lost a race with a concurrent request from the same contributor.
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: OPEN_DISPUTE_CONFLICT });
+      }
+      throw err;
+    }
     const dispute = rows[0];
 
     await logDisputeEvent(client, {
@@ -150,10 +206,10 @@ router.post(
   } catch (err) {
     await client.query('ROLLBACK');
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'You already have an open dispute for this campaign' });
+      return sendErrorResponse(res, 409, 'You already have an open dispute for this campaign');
     }
     logger.error('Dispute creation failed', { error: err.message });
-    res.status(500).json({ error: 'Could not raise dispute' });
+    sendErrorResponse(res, 500, 'Could not raise dispute');
   } finally {
     client.release();
   }
@@ -198,7 +254,7 @@ router.post(
 // GET /campaigns/:id/disputes — admin only
 router.get('/campaigns/:id/disputes', requireAuth, requireRole('admin'), async (req, res) => {
   if (!(await findVisibleCampaign(db, req.params.id))) {
-    return res.status(404).json({ error: 'Campaign not found' });
+    return sendErrorResponse(res, 404, 'Campaign not found');
   }
   const { rows } = await db.query(
     `SELECT d.*, u.name AS raised_by_name, u.email AS raised_by_email
@@ -278,7 +334,7 @@ router.patch(
       WHERE d.id = $1 AND ${notDeleted('c')}`,
     [req.params.id]
   );
-  if (!disputes.length) return res.status(404).json({ error: 'Dispute not found' });
+  if (!disputes.length) return sendErrorResponse(res, 404, 'Dispute not found');
   const dispute = disputes[0];
 
   const client = await db.connect();
@@ -383,7 +439,7 @@ router.patch(
   } catch (err) {
     await client.query('ROLLBACK');
     logger.error('Dispute update failed', { dispute_id: dispute.id, error: err.message });
-    res.status(500).json({ error: 'Could not update dispute' });
+    sendErrorResponse(res, 500, 'Could not update dispute');
   } finally {
     client.release();
   }
@@ -434,3 +490,4 @@ router.get('/disputes/:id/events', requireAuth, requireRole('admin'), async (req
 });
 
 module.exports = router;
+module.exports.createDisputeCreateLimiter = createDisputeCreateLimiter;

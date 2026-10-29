@@ -10,6 +10,7 @@ const {
   notificationPreferencesValidation,
   validateRequestBadRequest,
 } = require('../middleware/requestSchemas');
+const { sendErrorResponse } = require('../middleware/errorHandler');
 
 /**
  * @openapi
@@ -186,7 +187,7 @@ router.patch('/:id/read', requireAuth, notificationIdValidation, validateRequest
      RETURNING id`,
     [req.params.id, req.user.userId]
   );
-  if (!rows.length) return res.status(404).json({ error: 'Notification not found' });
+  if (!rows.length) return sendErrorResponse(res, 404, 'Notification not found');
   res.json({ ok: true });
 });
 
