@@ -56,7 +56,7 @@ export default function DepositModal({ onClose, onSuccess }) {
         }
         if (next.status === 'failed') {
           setError(next.last_error || 'The deposit could not be completed.');
-          setPhase('form');
+          setPhase('failed');
           if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
         }
       } catch (err) {
@@ -282,6 +282,26 @@ export default function DepositModal({ onClose, onSuccess }) {
               onClick={handleClose}
             >
               Close
+            </button>
+          </div>
+        ) : phase === 'failed' ? (
+          <div>
+            <h2 id="deposit-title" style={styles.title}>
+              Deposit failed
+            </h2>
+            {error && (
+              <p className="alert alert--error" style={{ marginBottom: '1rem' }} role="alert">
+                {error}
+              </p>
+            )}
+            <p style={{ marginBottom: '1rem', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+              The deposit could not be completed. You can try again with a different anchor or amount.
+            </p>
+            <button type="button" className="btn-primary" style={{ width: '100%' }} onClick={() => {
+              setPhase('form');
+              setError('');
+            }}>
+              Try Again
             </button>
           </div>
         ) : (
