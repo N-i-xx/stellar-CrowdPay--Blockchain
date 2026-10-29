@@ -43,21 +43,19 @@ export default function Login() {
 
   return (
     <main className="container" style={{ paddingTop: '4rem', maxWidth: '400px' }}>
-      <h1 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '1.5rem' }}>
-        {t('login.title')}
-      </h1>
-      <form
-        noValidate
-        onSubmit={handleSubmit}
-        style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
-      >
+      <h1 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '1.5rem' }}>{t('login.title')}</h1>
+      <form noValidate onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+        <label className="label-strong" htmlFor="login-email">{t('login.email')}</label>
         <input
+          id="login-email"
           type="email"
           placeholder={t('login.email')}
           value={form.email}
           onChange={set('email')}
           required
+          autoComplete="email"
         />
+        <label className="label-strong" htmlFor="login-password">{t('login.password')}</label>
         <div style={{ position: 'relative' }}>
           <input
             id="login-password"
@@ -90,15 +88,8 @@ export default function Login() {
             {showPassword ? t('common.hide') : t('common.show')}
           </button>
         </div>
-        {error && (
-          <p style={{ color: 'var(--color-status-error)', fontSize: '0.875rem' }}>{error}</p>
-        )}
-        <button
-          type="submit"
-          className="btn-primary"
-          disabled={loading}
-          style={{ padding: '0.8rem' }}
-        >
+        {error && <p role="alert" style={{ color: 'var(--color-status-error)', fontSize: '0.875rem' }}>{error}</p>}
+        <button type="submit" className="btn-primary" disabled={loading} style={{ padding: '0.8rem' }}>
           {loading ? t('login.loading') : t('login.submit')}
         </button>
         <div style={{ textAlign: 'center' }}>
