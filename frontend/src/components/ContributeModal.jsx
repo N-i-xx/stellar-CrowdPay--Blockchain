@@ -10,11 +10,18 @@ import { api } from '../services/api';
 import { stellarExpertTxUrl } from '../config/stellar';
 import { calculateFee } from '../lib/amounts';
 
-export default function ContributeModal({ campaign, onClose, onSuccess, guestFreighterMode = false }) {
+export default function ContributeModal({
+  campaign,
+  onClose,
+  onSuccess,
+  guestFreighterMode = false,
+}) {
   const { t } = useTranslation();
   const [amount, setAmount] = useState('');
   const [sendAsset, setSendAsset] = useState(campaign.asset_type);
-  const [paymentMethod, setPaymentMethod] = useState(guestFreighterMode ? 'freighter' : 'custodial');
+  const [paymentMethod, setPaymentMethod] = useState(
+    guestFreighterMode ? 'freighter' : 'custodial'
+  );
   const [anchorInfo, setAnchorInfo] = useState({ anchors: [] });
   const [selectedAnchorId, setSelectedAnchorId] = useState('');
   const [anchorSession, setAnchorSession] = useState(null);
@@ -31,7 +38,10 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
   const [feeError, setFeeError] = useState(null);
 
   useEffect(() => {
-    api.getPlatformConfig().then((cfg) => setFeeBps(cfg.platform_fee_bps || 0)).catch(() => {});
+    api
+      .getPlatformConfig()
+      .then((cfg) => setFeeBps(cfg.platform_fee_bps || 0))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -62,7 +72,8 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
     { value: 'USDC', label: t('contribute.usdcLabel'), hint: t('contribute.usdcHint') },
   ];
 
-  const selectedAnchor = anchorInfo.anchors.find((anchor) => anchor.id === selectedAnchorId) || null;
+  const selectedAnchor =
+    anchorInfo.anchors.find((anchor) => anchor.id === selectedAnchorId) || null;
   const effectiveSendAsset =
     paymentMethod === 'anchor' ? selectedAnchor?.asset?.code || campaign.asset_type : sendAsset;
   const isPathPayment = effectiveSendAsset !== campaign.asset_type;
@@ -83,11 +94,13 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
 
   // Check Freighter availability
   useEffect(() => {
-    isFreighterConnected().then((res) => {
-      const connected = res?.isConnected ?? res;
-      setFreighterAvailable(!!connected);
-      setFreighterChecked(true);
-    }).catch(() => setFreighterChecked(true));
+    isFreighterConnected()
+      .then((res) => {
+        const connected = res?.isConnected ?? res;
+        setFreighterAvailable(!!connected);
+        setFreighterChecked(true);
+      })
+      .catch(() => setFreighterChecked(true));
   }, []);
 
   const fetchQuote = useCallback(async () => {
@@ -99,12 +112,11 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
     setQuoteLoading(true);
     setQuoteError('');
     try {
-      const q = await api.quoteContribution(
-        {
-          send_asset: effectiveSendAsset,
-          dest_asset: campaign.asset_type,
-          dest_amount: destAmount,
-        });
+      const q = await api.quoteContribution({
+        send_asset: effectiveSendAsset,
+        dest_asset: campaign.asset_type,
+        dest_amount: destAmount,
+      });
       setQuote(q);
     } catch (err) {
       setQuote(null);
@@ -293,11 +305,15 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
     setLoadingLabel(t('contribute.checkingFreighterNetwork'));
     const network = await getNetwork();
     if (network?.error) {
-      throw new Error(friendlyFreighterError(network.error, t('contribute.freighterNetworkReadError')));
+      throw new Error(
+        friendlyFreighterError(network.error, t('contribute.freighterNetworkReadError'))
+      );
     }
     if (network?.networkPassphrase !== prepared.network_passphrase) {
       const current = network?.network || t('contribute.anotherNetwork', 'another network');
-      throw new Error(t('contribute.freighterNetworkMismatch', { current, expected: prepared.network_name }));
+      throw new Error(
+        t('contribute.freighterNetworkMismatch', { current, expected: prepared.network_name })
+      );
     }
 
     setLoadingLabel(t('contribute.waitingForSignature'));
@@ -345,7 +361,6 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
     return session;
   }
 
-
   async function handleSubmit(e) {
     e.preventDefault();
     if (!destAmount || Number(destAmount) <= 0) {
@@ -355,11 +370,21 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
 
     const amountNum = Number(destAmount);
     if (campaign.min_contribution && amountNum < Number(campaign.min_contribution)) {
-      setError(t('contribute.belowMinimum', { amount: campaign.min_contribution, asset: campaign.asset_type }));
+      setError(
+        t('contribute.belowMinimum', {
+          amount: campaign.min_contribution,
+          asset: campaign.asset_type,
+        })
+      );
       return;
     }
     if (campaign.max_contribution && amountNum > Number(campaign.max_contribution)) {
-      setError(t('contribute.aboveMaximum', { amount: campaign.max_contribution, asset: campaign.asset_type }));
+      setError(
+        t('contribute.aboveMaximum', {
+          amount: campaign.max_contribution,
+          asset: campaign.asset_type,
+        })
+      );
       return;
     }
     if (campaign.max_per_user) {
@@ -383,18 +408,18 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
         paymentMethod === 'anchor'
           ? await submitWithAnchor()
           : paymentMethod === 'freighter'
-          ? await submitWithFreighter()
-          : await submitWithCustodial();
+            ? await submitWithFreighter()
+            : await submitWithCustodial();
       if (paymentMethod === 'anchor') return;
-      
+
       setResult(data);
       setPhase('confirming');
       setLoadingLabel(t('contribute.confirmingProgress'));
-      
+
       // Poll finalization endpoint until status is 'finalized' or 'failed'
       const pollFinalization = async (txHash, maxAttempts = 15) => {
         for (let i = 0; i < maxAttempts; i++) {
-          await new Promise(r => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 2000));
           try {
             const finalizationResult = await api.getContributionFinalization(txHash);
             if (finalizationResult.finalization_status === 'finalized') {
@@ -413,7 +438,7 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
         }
         setPhase('pending');
       };
-      
+
       pollFinalization(data.tx_hash);
     } catch (err) {
       if (paymentMethod === 'anchor' && anchorPopupRef.current && !anchorPopupRef.current.closed) {
@@ -464,21 +489,27 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                 <legend className="label-strong" style={{ marginBottom: '0.45rem' }}>
                   {t('contribute.paymentMethod')}
                 </legend>
-                <div className="asset-picker" role="radiogroup" aria-label={t('contribute.paymentMethodAria')}>
+                <div
+                  className="asset-picker"
+                  role="radiogroup"
+                  aria-label={t('contribute.paymentMethodAria')}
+                >
                   {!guestFreighterMode && (
-                  <label
-                    className={`asset-picker__option${paymentMethod === 'custodial' ? ' asset-picker__option--selected' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="payment_method"
-                      value="custodial"
-                      checked={paymentMethod === 'custodial'}
-                      onChange={() => setPaymentMethod('custodial')}
-                    />
-                    <div className="asset-picker__code">{t('contribute.custodialWallet')}</div>
-                    <div className="asset-picker__hint">{t('contribute.custodialWalletHint')}</div>
-                  </label>
+                    <label
+                      className={`asset-picker__option${paymentMethod === 'custodial' ? ' asset-picker__option--selected' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="payment_method"
+                        value="custodial"
+                        checked={paymentMethod === 'custodial'}
+                        onChange={() => setPaymentMethod('custodial')}
+                      />
+                      <div className="asset-picker__code">{t('contribute.custodialWallet')}</div>
+                      <div className="asset-picker__hint">
+                        {t('contribute.custodialWalletHint')}
+                      </div>
+                    </label>
                   )}
                   {(freighterAvailable || guestFreighterMode) && (
                     <label
@@ -511,14 +542,20 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                     </label>
                   )}
                 </div>
-                {freighterChecked && !freighterAvailable && (paymentMethod === 'freighter' || guestFreighterMode) && (
-                  <span id="contrib-wallet-help" style={styles.help}>
-                    {t('contribute.freighterNotDetectedLink')}{' '}
-                    <a href="https://www.freighter.app/" target="_blank" rel="noopener noreferrer">
-                      {t('contribute.installFreighter')}
-                    </a>
-                  </span>
-                )}
+                {freighterChecked &&
+                  !freighterAvailable &&
+                  (paymentMethod === 'freighter' || guestFreighterMode) && (
+                    <span id="contrib-wallet-help" style={styles.help}>
+                      {t('contribute.freighterNotDetectedLink')}{' '}
+                      <a
+                        href="https://www.freighter.app/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {t('contribute.installFreighter')}
+                      </a>
+                    </span>
+                  )}
               </fieldset>
 
               {paymentMethod === 'anchor' ? (
@@ -527,7 +564,11 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                     <legend className="label-strong" style={{ marginBottom: '0.45rem' }}>
                       {t('contribute.depositPartner')}
                     </legend>
-                    <div className="asset-picker" role="radiogroup" aria-label={t('contribute.depositPartnerAria')}>
+                    <div
+                      className="asset-picker"
+                      role="radiogroup"
+                      aria-label={t('contribute.depositPartnerAria')}
+                    >
                       {anchorInfo.anchors
                         .filter((anchor) => anchor.available)
                         .map((anchor) => (
@@ -544,15 +585,25 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                             />
                             <div className="asset-picker__code">{anchor.name}</div>
                             <div className="asset-picker__hint">
-                              {t('contribute.depositAsset', { asset: anchor.asset.code, environment: anchor.environment })}
+                              {t('contribute.depositAsset', {
+                                asset: anchor.asset.code,
+                                environment: anchor.environment,
+                              })}
                             </div>
                           </label>
                         ))}
                     </div>
                   </fieldset>
                   {selectedAnchor && (
-                    <div className="alert alert--info" style={{ marginBottom: '1rem' }} role="status">
-                      {t('contribute.anchorFlowSummary', { name: selectedAnchor.name, asset: selectedAnchor.asset.code })}
+                    <div
+                      className="alert alert--info"
+                      style={{ marginBottom: '1rem' }}
+                      role="status"
+                    >
+                      {t('contribute.anchorFlowSummary', {
+                        name: selectedAnchor.name,
+                        asset: selectedAnchor.asset.code,
+                      })}
                     </div>
                   )}
                 </>
@@ -561,7 +612,11 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                   <legend className="label-strong" style={{ marginBottom: '0.45rem' }}>
                     {t('contribute.payWith')}
                   </legend>
-                  <div className="asset-picker" role="radiogroup" aria-label={t('contribute.assetToSendAria')}>
+                  <div
+                    className="asset-picker"
+                    role="radiogroup"
+                    aria-label={t('contribute.assetToSendAria')}
+                  >
                     {SEND_OPTIONS.map((opt) => (
                       <label
                         key={opt.value}
@@ -601,15 +656,40 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                   <span style={{ display: 'block', marginBottom: '0.25rem' }}>
                     {t('contribute.amountCreditedHelp', { asset: campaign.asset_type })}
                   </span>
-                  {(campaign.min_contribution || campaign.max_contribution || campaign.max_per_user) && (
-                    <span style={{ display: 'block', marginTop: '0.35rem', borderTop: '1px dashed var(--color-border-lighter)', paddingTop: '0.35rem' }}>
+                  {(campaign.min_contribution ||
+                    campaign.max_contribution ||
+                    campaign.max_per_user) && (
+                    <span
+                      style={{
+                        display: 'block',
+                        marginTop: '0.35rem',
+                        borderTop: '1px dashed var(--color-border-lighter)',
+                        paddingTop: '0.35rem',
+                      }}
+                    >
                       <strong>{t('contribute.limitsTitle')}</strong>
-                      <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1rem', listStyleType: 'disc' }}>
+                      <ul
+                        style={{
+                          margin: '0.25rem 0 0',
+                          paddingLeft: '1rem',
+                          listStyleType: 'disc',
+                        }}
+                      >
                         {campaign.min_contribution && (
-                          <li>{t('contribute.limitMin', { amount: Number(campaign.min_contribution).toLocaleString(), asset: campaign.asset_type })}</li>
+                          <li>
+                            {t('contribute.limitMin', {
+                              amount: Number(campaign.min_contribution).toLocaleString(),
+                              asset: campaign.asset_type,
+                            })}
+                          </li>
                         )}
                         {campaign.max_contribution && (
-                          <li>{t('contribute.limitMax', { amount: Number(campaign.max_contribution).toLocaleString(), asset: campaign.asset_type })}</li>
+                          <li>
+                            {t('contribute.limitMax', {
+                              amount: Number(campaign.max_contribution).toLocaleString(),
+                              asset: campaign.asset_type,
+                            })}
+                          </li>
                         )}
                         {campaign.max_per_user && (
                           <li>
@@ -646,22 +726,22 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                   onChange={(e) => setDisplayName(e.target.value)}
                   maxLength={50}
                 />
-                <span style={styles.help}>
-                  {t('contribute.displayNameHelp')}
-                </span>
+                <span style={styles.help}>{t('contribute.displayNameHelp')}</span>
               </div>
 
               {isPathPayment && (
                 <div className="alert alert--info" style={{ marginTop: '0.85rem' }} role="status">
                   <strong>{t('contribute.crossAsset')}</strong>{' '}
-                  {t('contribute.crossAssetBody', { from: effectiveSendAsset, to: campaign.asset_type })}
+                  {t('contribute.crossAssetBody', {
+                    from: effectiveSendAsset,
+                    to: campaign.asset_type,
+                  })}
                 </div>
               )}
 
               {paymentMethod === 'freighter' && (
                 <div className="alert alert--info" style={{ marginTop: '0.85rem' }} role="status">
-                  <strong>{t('contribute.nonCustodial')}</strong>{' '}
-                  {t('contribute.nonCustodialBody')}
+                  <strong>{t('contribute.nonCustodial')}</strong> {t('contribute.nonCustodialBody')}
                 </div>
               )}
 
@@ -685,7 +765,8 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                         {t('contribute.estimatedFromWallet')}
                       </div>
                       <div style={{ fontSize: '0.875rem', lineHeight: 1.45 }}>
-                        Up to <strong>{quote.max_send_amount}</strong> {effectiveSendAsset} (includes a small slippage buffer).
+                        Up to <strong>{quote.max_send_amount}</strong> {effectiveSendAsset}{' '}
+                        (includes a small slippage buffer).
                         {Array.isArray(quote.path) && quote.path.length > 0 && (
                           <>
                             {' '}
@@ -743,10 +824,10 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                   {loading
                     ? loadingLabel
                     : paymentMethod === 'anchor'
-                    ? t('contribute.openDepositFlow')
-                    : paymentMethod === 'freighter'
-                    ? t('contribute.reviewInFreighter')
-                    : t('contribute.confirmPayment')}
+                      ? t('contribute.openDepositFlow')
+                      : paymentMethod === 'freighter'
+                        ? t('contribute.reviewInFreighter')
+                        : t('contribute.confirmPayment')}
                 </button>
               </div>
             </form>
@@ -761,11 +842,15 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
             </p>
             {anchorSession?.anchor_transaction_id && (
               <p style={{ fontSize: '0.875rem', marginBottom: '0.75rem' }}>
-                <strong>{t('contribute.anchorTransaction')}</strong> {anchorSession.anchor_transaction_id}
+                <strong>{t('contribute.anchorTransaction')}</strong>{' '}
+                {anchorSession.anchor_transaction_id}
               </p>
             )}
             {anchorSession?.conversion_quote && (
-              <div className="alert alert--success" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
+              <div
+                className="alert alert--success"
+                style={{ marginBottom: '1rem', fontSize: '0.85rem' }}
+              >
                 <strong>{t('contribute.plannedContribution')}</strong>{' '}
                 {t('contribute.plannedContributionDetail', {
                   maxSend: anchorSession.conversion_quote.max_send_amount,
@@ -780,12 +865,19 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
                 type="button"
                 className="btn-secondary"
                 style={{ width: '100%', marginBottom: '0.75rem' }}
-                onClick={() => window.open(anchorSession.interactive_url, '_blank', 'noopener,noreferrer')}
+                onClick={() =>
+                  window.open(anchorSession.interactive_url, '_blank', 'noopener,noreferrer')
+                }
               >
                 {t('contribute.reopenDepositWindow')}
               </button>
             )}
-            <button type="button" className="btn-primary" style={{ width: '100%' }} onClick={handleClose}>
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ width: '100%' }}
+              onClick={handleClose}
+            >
               {t('common.close')}
             </button>
           </div>
@@ -825,22 +917,31 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
               {t('contribute.confirming')}
             </h2>
             <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                border: '4px solid var(--color-border-lighter)',
-                borderTop: '4px solid var(--color-accent)',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-                margin: '0 auto',
-                marginBottom: '1rem',
-              }} />
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  border: '4px solid var(--color-border-lighter)',
+                  borderTop: '4px solid var(--color-accent)',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite',
+                  margin: '0 auto',
+                  marginBottom: '1rem',
+                }}
+              />
               <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem' }}>
                 {t('contribute.confirmingBody')}
               </p>
             </div>
             {result?.tx_hash && (
-              <p style={{ fontSize: '0.875rem', marginBottom: '1rem', wordBreak: 'break-all', textAlign: 'center' }}>
+              <p
+                style={{
+                  fontSize: '0.875rem',
+                  marginBottom: '1rem',
+                  wordBreak: 'break-all',
+                  textAlign: 'center',
+                }}
+              >
                 <a
                   href={stellarExpertTxUrl(result.tx_hash)}
                   target="_blank"
@@ -879,7 +980,10 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
               </p>
             )}
             {result?.conversion_quote && (
-              <div className="alert alert--info" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
+              <div
+                className="alert alert--info"
+                style={{ marginBottom: '1rem', fontSize: '0.85rem' }}
+              >
                 <strong>{t('contribute.conversionSummary')}</strong>{' '}
                 {t('contribute.conversionSummaryDetail', {
                   maxSend: result.conversion_quote.max_send_amount,
@@ -890,7 +994,10 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
               </div>
             )}
             {result?.anchor_transaction_id && (
-              <div className="alert alert--info" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
+              <div
+                className="alert alert--info"
+                style={{ marginBottom: '1rem', fontSize: '0.85rem' }}
+              >
                 <strong>{t('contribute.anchorReference')}</strong> {result.anchor_transaction_id}
               </div>
             )}
@@ -901,7 +1008,13 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
               </p>
             )}
 
-            <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--color-border-lighter)', paddingTop: '1.25rem' }}>
+            <div
+              style={{
+                marginTop: '1.5rem',
+                borderTop: '1px solid var(--color-border-lighter)',
+                paddingTop: '1.25rem',
+              }}
+            >
               <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.75rem' }}>
                 {t('contribute.tellFriends')}
               </h3>
@@ -941,7 +1054,12 @@ export default function ContributeModal({ campaign, onClose, onSuccess, guestFre
               </div>
             </div>
 
-            <button type="button" className="btn-primary" style={{ width: '100%', marginTop: '1.25rem' }} onClick={handleClose}>
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ width: '100%', marginTop: '1.25rem' }}
+              onClick={handleClose}
+            >
               {t('common.done')}
             </button>
           </div>
@@ -995,8 +1113,18 @@ const styles = {
     zIndex: 100,
     padding: '0.75rem',
   },
-  title: { fontSize: '1.2rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--color-text-primary)' },
-  subtitle: { color: 'var(--color-text-secondary)', fontSize: '0.875rem', lineHeight: 1.55, marginBottom: '1.1rem' },
+  title: {
+    fontSize: '1.2rem',
+    fontWeight: 800,
+    marginBottom: '0.5rem',
+    color: 'var(--color-text-primary)',
+  },
+  subtitle: {
+    color: 'var(--color-text-secondary)',
+    fontSize: '0.875rem',
+    lineHeight: 1.55,
+    marginBottom: '1.1rem',
+  },
   help: { fontSize: '0.78rem', color: 'var(--color-text-hint)', marginTop: '0.2rem' },
   actions: {
     display: 'flex',

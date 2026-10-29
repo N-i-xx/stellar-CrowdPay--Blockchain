@@ -93,7 +93,10 @@ export default function Login() {
           {loading ? t('login.loading') : t('login.submit')}
         </button>
         <div style={{ textAlign: 'center' }}>
-          <Link to="/forgot-password" style={{ color: 'var(--color-text-hint)', fontSize: '0.85rem', textDecoration: 'none' }}>
+          <Link
+            to="/forgot-password"
+            style={{ color: 'var(--color-text-hint)', fontSize: '0.85rem', textDecoration: 'none' }}
+          >
             {t('login.forgotPassword')}
           </Link>
         </div>

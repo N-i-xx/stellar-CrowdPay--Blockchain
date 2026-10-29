@@ -9,16 +9,18 @@ const PAGE_SIZE = 10;
 function KindBadge({ kind }) {
   const isContribution = kind === 'contribution';
   return (
-    <span style={{
-      display: 'inline-block',
-      fontSize: '0.72rem',
-      fontWeight: 700,
-      padding: '2px 8px',
-      borderRadius: '99px',
-      background: isContribution ? 'var(--color-accent-lightest)' : '#fef3c7',
-      color: isContribution ? 'var(--color-accent)' : '#92400e',
-      textTransform: 'capitalize',
-    }}>
+    <span
+      style={{
+        display: 'inline-block',
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        padding: '2px 8px',
+        borderRadius: '99px',
+        background: isContribution ? 'var(--color-accent-lightest)' : '#fef3c7',
+        color: isContribution ? 'var(--color-accent)' : '#92400e',
+        textTransform: 'capitalize',
+      }}
+    >
       {isContribution ? 'Contribution' : 'Withdrawal'}
     </span>
   );
@@ -35,9 +37,9 @@ function StatusPill({ status }) {
   const { t } = useTranslation();
   if (!status) return null;
   const map = {
-    indexed:            { bg: '#dcfce7', color: '#166534' },
-    submitted:          { bg: '#dbeafe', color: '#1e40af' },
-    failed:             { bg: '#fee2e2', color: '#991b1b' },
+    indexed: { bg: '#dcfce7', color: '#166534' },
+    submitted: { bg: '#dbeafe', color: '#1e40af' },
+    failed: { bg: '#fee2e2', color: '#991b1b' },
     pending_signatures: { bg: '#fef3c7', color: '#92400e' },
   };
   const style = map[status] || { bg: 'var(--color-surface)', color: 'var(--color-text-hint)' };
@@ -45,15 +47,17 @@ function StatusPill({ status }) {
     ? t(STATUS_LABEL_KEYS[status])
     : status.charAt(0).toUpperCase() + status.slice(1);
   return (
-    <span style={{
-      display: 'inline-block',
-      fontSize: '0.72rem',
-      fontWeight: 700,
-      padding: '2px 8px',
-      borderRadius: '99px',
-      background: style.bg,
-      color: style.color,
-    }}>
+    <span
+      style={{
+        display: 'inline-block',
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        padding: '2px 8px',
+        borderRadius: '99px',
+        background: style.bg,
+        color: style.color,
+      }}
+    >
       {label}
     </span>
   );
@@ -70,9 +74,10 @@ export default function TransactionHistory({ campaignId, isCreator }) {
     if (!isCreator) return;
     setLoading(true);
     setError('');
-    api.getStellarTransactions({ campaignId, limit: limit + 1 })
+    api
+      .getStellarTransactions({ campaignId, limit: limit + 1 })
       .then((data) => {
-        const rows = Array.isArray(data) ? data : (data.transactions || []);
+        const rows = Array.isArray(data) ? data : data.transactions || [];
         setHasMore(rows.length > limit);
         setRecords(rows.slice(0, limit));
       })
@@ -86,12 +91,14 @@ export default function TransactionHistory({ campaignId, isCreator }) {
     <section style={styles.section} aria-label="Transaction history">
       <h2 style={styles.h2}>Transaction history</h2>
       <p style={styles.intro}>
-        Every on-chain event for this campaign — contributions, withdrawals, and
-        failures — recorded directly from the Stellar network.
+        Every on-chain event for this campaign — contributions, withdrawals, and failures — recorded
+        directly from the Stellar network.
       </p>
 
       {error && (
-        <p className="alert alert--error" role="alert">{error}</p>
+        <p className="alert alert--error" role="alert">
+          {error}
+        </p>
       )}
 
       {loading && records.length === 0 ? (
@@ -110,7 +117,9 @@ export default function TransactionHistory({ campaignId, isCreator }) {
                     <KindBadge kind={tx.kind} />
                     <StatusPill status={tx.status} />
                   </div>
-                  <span style={styles.time}><RelativeTime date={tx.created_at} /></span>
+                  <span style={styles.time}>
+                    <RelativeTime date={tx.created_at} />
+                  </span>
                 </div>
 
                 {tx.tx_hash && (

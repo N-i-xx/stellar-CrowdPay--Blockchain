@@ -40,7 +40,9 @@ export default function AcceptInvite() {
   if (!user) {
     return (
       <main className="container page-narrow" style={{ paddingTop: '3rem' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '1rem' }}>Join Campaign Team</h1>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '1rem' }}>
+          Join Campaign Team
+        </h1>
         <p className="alert alert--warning" style={{ marginBottom: '1.25rem' }}>
           You must be logged in to accept a campaign invitation.
         </p>
@@ -67,18 +69,37 @@ export default function AcceptInvite() {
 
   return (
     <main className="container page-narrow" style={{ paddingTop: '3rem' }}>
-      <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '1rem' }}>Accept Campaign Invitation</h1>
+      <h1 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '1rem' }}>
+        Accept Campaign Invitation
+      </h1>
       {success ? (
         <p className="alert alert--success">
-          <strong>Invitation accepted!</strong> You are now a member of the campaign team. Redirecting…
+          <strong>Invitation accepted!</strong> You are now a member of the campaign team.
+          Redirecting…
         </p>
       ) : (
         <>
-          <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem', lineHeight: 1.55 }}>
-            You have been invited to participate in this crowdfunding project. Accepting gives you access to the campaign permissions granted to your account.
+          <p
+            style={{
+              color: 'var(--color-text-secondary)',
+              marginBottom: '1.5rem',
+              lineHeight: 1.55,
+            }}
+          >
+            You have been invited to participate in this crowdfunding project. Accepting gives you
+            access to the campaign permissions granted to your account.
           </p>
-          {error && <p className="alert alert--error" style={{ marginBottom: '1rem' }}>{error}</p>}
-          <button className="btn-primary" disabled={loading} onClick={handleAccept} style={{ width: '100%' }}>
+          {error && (
+            <p className="alert alert--error" style={{ marginBottom: '1rem' }}>
+              {error}
+            </p>
+          )}
+          <button
+            className="btn-primary"
+            disabled={loading}
+            onClick={handleAccept}
+            style={{ width: '100%' }}
+          >
             {loading ? 'Accepting…' : 'Accept Invitation'}
           </button>
         </>

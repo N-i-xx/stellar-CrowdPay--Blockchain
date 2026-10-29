@@ -83,12 +83,16 @@ export default function Navbar() {
   }, [showDropdown]);
 
   function handleMarkRead(id) {
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read_at: new Date().toISOString() } : n));
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n))
+    );
   }
 
   async function handleMarkAllRead() {
     await api.markAllNotificationsRead().catch(() => {});
-    setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at || new Date().toISOString() })));
+    setNotifications((prev) =>
+      prev.map((n) => ({ ...n, read_at: n.read_at || new Date().toISOString() }))
+    );
   }
 
   function handleLogout() {
@@ -165,7 +169,9 @@ export default function Navbar() {
                   Admin
                 </Link>
               )}
-              <span style={styles.name} aria-hidden="true">{user.name}</span>
+              <span style={styles.name} aria-hidden="true">
+                {user.name}
+              </span>
               <div style={styles.bellWrap} ref={bellRef}>
                 <button
                   ref={bellBtnRef}
@@ -188,7 +194,11 @@ export default function Navbar() {
                   />
                 )}
               </div>
-              <button onClick={handleLogout} className="btn-secondary" style={{ padding: '0.4rem 0.9rem' }}>
+              <button
+                onClick={handleLogout}
+                className="btn-secondary"
+                style={{ padding: '0.4rem 0.9rem' }}
+              >
                 {t('nav.logout')}
               </button>
             </>
@@ -216,10 +226,23 @@ export default function Navbar() {
 }
 
 const styles = {
-  nav: { background: 'var(--color-bg)', borderBottom: '1px solid var(--color-border)', position: 'sticky', top: 0, zIndex: 10 },
+  nav: {
+    background: 'var(--color-bg)',
+    borderBottom: '1px solid var(--color-border)',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
+  },
   logo: { fontWeight: 800, fontSize: '1.15rem', color: 'var(--color-accent)' },
   link: { color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: '0.9rem' },
-  name: { color: 'var(--color-text-secondary)', fontSize: '0.85rem', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  name: {
+    color: 'var(--color-text-secondary)',
+    fontSize: '0.85rem',
+    maxWidth: '140px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   languageSelect: {
     background: 'transparent',
     border: '1px solid var(--color-border)',
